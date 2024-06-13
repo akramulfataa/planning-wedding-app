@@ -9,13 +9,30 @@ import (
 )
 
 type Tabungan struct {
-	Penghasilan float64
-	Konsumtif   map[string]float64
+	Penghasilan float64            `json:"penghasilan"`
+	Konsumtif   map[string]float64 `json:"konsumtif"`
+	Alokasi     map[string]float64 `json:"alokasi"`
 }
 
 type TabunganRequest struct {
 	Penghasilan float64            `json:"penghasilan"`
 	Konsumtif   map[string]float64 `json:"konsumtif"`
+	Alokasi     map[string]float64 `json:"alokasi"`
+}
+
+type Response struct {
+	Status  string `json:"status"`
+	Message string `json:"pesan"`
+	Data    Data
+}
+
+type Data struct {
+	Penghasilan             string                 `json:"penghasilan"`
+	TotalPengeluaranHarian  string                 `json:"totalpengeluaranperhari"`
+	TotalPengeluaranBulanan string                 `json:"totalpengeluaranperbulan"`
+	TotalPengeluaranTahunan string                 `json:"totalpengeluaranpertahun"`
+	SisaUang                string                 `json:"sisauang"`
+	Konsumtif               map[string]interface{} `json:"konsumtif"`
 }
 
 func NewTabungan(req *TabunganRequest) (*Tabungan, error) {
@@ -25,6 +42,7 @@ func NewTabungan(req *TabunganRequest) (*Tabungan, error) {
 	tabungan := &Tabungan{
 		Penghasilan: req.Penghasilan,
 		Konsumtif:   req.Konsumtif,
+		Alokasi:     req.Alokasi,
 	}
 	return tabungan, nil
 }
@@ -36,6 +54,11 @@ func InputOuputValidasi(req *TabunganRequest) error {
 	for key, value := range req.Konsumtif {
 		if value <= 0 {
 			return fmt.Errorf("%s must be greater than or equal to 0", key)
+		}
+	}
+	for l, v := range req.Alokasi {
+		if v <= 0 || v >= 100 {
+			return fmt.Errorf("%s harus antara 0 sampai 100", l)
 		}
 	}
 	return nil
@@ -88,7 +111,14 @@ func HandleHitung(w http.ResponseWriter, r *http.Request) {
 	totalBulanan := GetTotalBulanan(tabungan)
 
 	if totalBulanan >= req.Penghasilan {
-		http.Error(w, "gaji perbulan anda tidak cukup di tabung buat nikah", http.StatusBadRequest)
+		response := Response{
+			Message: "Gaji bulanan Anda tidak cukup untuk menabung untuk nikah.",
+			Status:  "error",
+			Data:    Data{},
+		}
+		w.Header().Set("Content-type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
 	}
 
 	totalHarian := GetTotalHarian(tabungan)
@@ -96,21 +126,33 @@ func HandleHitung(w http.ResponseWriter, r *http.Request) {
 
 	sisaUang := tabungan.Penghasilan - totalBulanan
 
-	alokasiPersen := 0.20
-	asset := alokasiPersen * sisaUang * 0.25
-	nikah := alokasiPersen * sisaUang * 0.25
-	keluarga := alokasiPersen * sisaUang * 0.25
-	sedekah := alokasiPersen * sisaUang * 0.25
+	// semua alokasi nya dibagikan dengan berapapun persentasenya
+	alokasi := make(map[string]string)
+	for key, persen := range tabungan.Alokasi {
+		alokasi[key] = FormatRupiah(sisaUang * persen / 100)
+	}
 
-	response := map[string]string{
-		"TotalPengeluaranBulanan": FormatRupiah(totalBulanan),
-		"TotalPengeluaranHarian":  FormatRupiah(totalHarian),
-		"TotalPengeluaranTahunan": FormatRupiah(totalTahunan),
-		"SisaUang":                FormatRupiah(sisaUang),
-		"TabunganAsset":           FormatRupiah(asset),
-		"TabunganNikah":           FormatRupiah(nikah),
-		"SedekahUntukKeluarga":    FormatRupiah(keluarga),
-		"Sedekah":                 FormatRupiah(sedekah),
+	// ambil semua kosumtifnya
+	konsumtif := make(map[string]interface{})
+	for key, value := range tabungan.Konsumtif {
+		konsumtif[key] = FormatRupiah(value)
+	}
+
+	konsumtif["alokasi"] = alokasi
+
+	data := Data{
+		Penghasilan:             FormatRupiah(tabungan.Penghasilan),
+		TotalPengeluaranBulanan: FormatRupiah(totalBulanan),
+		TotalPengeluaranHarian:  FormatRupiah(totalHarian),
+		TotalPengeluaranTahunan: FormatRupiah(totalTahunan),
+		SisaUang:                FormatRupiah(sisaUang),
+		Konsumtif:               konsumtif,
+	}
+
+	response := Response{
+		Message: "data berhasil di hitung",
+		Status:  "success",
+		Data:    data,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
