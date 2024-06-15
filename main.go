@@ -9,6 +9,6 @@ import (
 
 func main() {
 	http.HandleFunc("/hitung", handlers.HandleHitung)
-	fmt.Println("Server started at :8080")
+	fmt.Println("Server started at")
 	slog.Info("server berjalan di port: ", http.ListenAndServe(":8080", nil))
 }
